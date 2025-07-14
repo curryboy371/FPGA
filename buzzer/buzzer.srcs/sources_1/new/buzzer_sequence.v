@@ -11,7 +11,7 @@ module buzzer_sequence(
 
     parameter TIME_30MS = 30;
     parameter TIME_70MS = 70;
-    parameter TIME_1S   = 10;
+    parameter TIME_1S   = 1000;
 
 
     parameter DIV_1KHZ  = 50000;
