@@ -7,16 +7,27 @@ module hc_sr04(
     input echo,
     output reg enable,              // 사용 가능 여부 ( active high )
     output reg trigger,
+<<<<<<< HEAD
     //output [15:0] led,
+=======
+>>>>>>> 134525a36c2a604b3872dcf31189640a4c7bab1c
     output reg [13:0] distance
     );
 
     // 상태 파라미터
+<<<<<<< HEAD
     localparam IDLE = 3'b001;            // 대기상태
     localparam TRIGGER = 3'b010;         // 트리거 진행상태
     localparam ECHO = 3'b011;            // ECHO 진행상태
     localparam ECHO_BACK = 3'b100;       // ECHO 돌아온 상태
     localparam ECHO_FAILED = 3'b101;     // ECHO 돌아오지 못함 ( 측정실패 )
+=======
+    localparam IDLE = 3'b000;            // 대기상태
+    localparam TRIGGER = 3'b001;         // 트리거 진행상태
+    localparam ECHO = 3'b010;            // ECHO 진행상태
+    localparam ECHO_BACK = 3'b011;       // ECHO 돌아온 상태
+    localparam ECHO_FAILED = 3'b100;     // ECHO 돌아오지 못함 ( 측정실패 )
+>>>>>>> 134525a36c2a604b3872dcf31189640a4c7bab1c
     localparam COOL_TIME = 3'b111;       // 실행 후 cool time 대기 ( 60ms)
 
 
@@ -25,8 +36,11 @@ module hc_sr04(
     localparam MAX_ECHO_US = 38000; // 38ms 38000us     측청 가능 최대 거리
     localparam COOL_TIME_US = 80000; // 80ms 80000us    cool time
 
+<<<<<<< HEAD
     reg [2:0] debug_state; // 디버그용 상태 저장
 
+=======
+>>>>>>> 134525a36c2a604b3872dcf31189640a4c7bab1c
     reg [2:0] hc_sr04_state = IDLE; // 초음파 모듈 상태
 
     wire w_tick_us;
@@ -45,8 +59,11 @@ module hc_sr04(
             distance <= 0;
             enable <= 1;
         end else begin
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> 134525a36c2a604b3872dcf31189640a4c7bab1c
             case(hc_sr04_state)
                 IDLE: begin
                     if(!start) begin 
@@ -61,7 +78,11 @@ module hc_sr04(
                     if(w_tick_us) begin 
                         if(r_us_count == TRIGGER_US - 1) begin
                             r_us_count <= 0;
+<<<<<<< HEAD
                             trigger <= 0; // 트리거 종료
+=======
+                            trigger <= 0; // 트리거 종료, 이 시점 이후로 모듈이 초음파 발사
+>>>>>>> 134525a36c2a604b3872dcf31189640a4c7bab1c
                             hc_sr04_state <= ECHO;
                         end
                         else begin
@@ -71,6 +92,7 @@ module hc_sr04(
 
                 end
                 ECHO: begin
+<<<<<<< HEAD
                     if (echo) begin // echo 시작 시점부터 카운트
                         r_us_count <= 0; 
                         hc_sr04_state <= ECHO_BACK;
@@ -102,6 +124,33 @@ module hc_sr04(
 
                 ECHO_FAILED: begin
                     distance <= 9999;
+=======
+                    if(echo) begin
+                        hc_sr04_state <= ECHO_BACK;
+                    end
+                    else begin
+                        if(w_tick_us) begin
+                            r_us_count <= r_us_count + 1;
+
+                            // 측정 실패 or 거리 초과
+                            if(r_us_count == MAX_ECHO_US - 1) begin
+                                 hc_sr04_state <= ECHO_FAILED;
+                            end
+                        end
+                    end
+                end
+                ECHO_BACK: begin 
+                    // 곱셈과 비트연산으로 나눗셈과 유하하게
+                    distance <= r_us_count;
+                    //distance <= (r_us_count * 17) >> 10;
+                    //distance <= r_us_count / 58;
+                    r_us_count <= 0;
+                    hc_sr04_state <= COOL_TIME;
+
+                end
+                ECHO_FAILED: begin
+                    distance <= 0;
+>>>>>>> 134525a36c2a604b3872dcf31189640a4c7bab1c
                     r_us_count <= 0;
                     hc_sr04_state <= COOL_TIME;
                 end
@@ -109,7 +158,11 @@ module hc_sr04(
                 COOL_TIME: begin
                     if(w_tick_us) begin
                         r_us_count <= r_us_count + 1;
+<<<<<<< HEAD
                         if(r_us_count == COOL_TIME_US - 1) begin
+=======
+                        if(r_us_count == COOL_TIME - 1) begin
+>>>>>>> 134525a36c2a604b3872dcf31189640a4c7bab1c
                             hc_sr04_state <= IDLE;
                             enable <= 1;
                         end
@@ -122,8 +175,11 @@ module hc_sr04(
             endcase
         end
     end
+<<<<<<< HEAD
 
     // assign led[2:0] = debug_state; // LED 3개에 상태 보여주기
     // assign led[5:3] = hc_sr04_state; // LED 3개에 상태 보여주기
+=======
+>>>>>>> 134525a36c2a604b3872dcf31189640a4c7bab1c
 endmodule
 
