@@ -9,7 +9,7 @@ module dht11(
     output reg data_valid,
     output reg [7:0] humidity_int, humidity_dec, checksum,
     output reg [7:0] temp_int, temp_dec,
-    output [7:0] led
+    output [15:0] led
 );
 
     // 상태 파라미터
