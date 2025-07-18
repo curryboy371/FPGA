@@ -171,12 +171,6 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
         //.led(led)
     );
 
-
-
-
-
-
-
     // 전자레인지 상태에 따른 입력 및 time 처리
     always @(posedge clk or posedge reset) begin
         if (reset) begin
@@ -395,9 +389,6 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
                             else begin
                                 angle <= CLOSE_ANGLE;
                             end
-
-
-
                         end
                         else begin
                             ahu_getting_values[INDEX_TEMP] <= 0;
@@ -406,7 +397,6 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
 
                     end
 
-                    r_duty_cycle <=7;
                     if(w_tick_1s) begin
                         if(ahu_getting_values[INDEX_TIME] <= 0) begin
                             ahu_state <= FINISHED;
