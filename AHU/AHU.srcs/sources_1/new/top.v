@@ -53,7 +53,7 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
     // bit flag로 ( led 확인 쉽게할라구)
     parameter RESET      = 5'b00000;
     parameter IDLE       = 5'b00001;
-    parameter TIME_SETUP = 5'b00010;
+    parameter SETUP = 5'b00010;
     parameter RUNNING    = 5'b00100;
     parameter FINISHED   = 5'b01000;
     parameter PAUSED     = 5'b10000;
@@ -94,7 +94,7 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
 
                         if(w_done_cycle) begin
                             if(clean_btn_edge[BTN_CENTER]) begin
-                                ahu_state <= TIME_SETUP;
+                                ahu_state <= SETUP;
                                 ahu_time <= DEFAULT_TIME;
 
                                 finish_wait <= FINISH_WAIT_SEC;
@@ -102,7 +102,7 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
                         end
                     end
                 end
-                TIME_SETUP: begin
+                SETUP: begin
                     if(door_state == DOOR_CLOSED) begin 
 
                         if(w_done_cycle) begin
@@ -352,11 +352,9 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
         if (reset) begin
             input_data <= 14'd0;
         end else if (data_valid) begin
-            // 예시 1: 온도 정수부만 전송하고 싶을 때
-            input_data <= {6'b000000, temp_int};  // 상위 6비트 0 패딩
-
-            // 예시 2: 습도 정수 + 소수 결합해서 14비트로 보내고 싶을 경우
-            // input_data <= {humidity_int[6:0], humidity_dec[6:0]};
+            input_data <= {6'b000000, humidity_int};  // 상위 6비트 0 패딩
+        end else begin
+            input_data <= 0;
         end
     end
 
@@ -364,9 +362,10 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
     dht11 u_dht11 (
         .clk(clk),
         .reset(reset),
-        .start(clean_btn_edge[BTN_CENTER]),
-        .data(dht11_data),                  // inout → 상위에서 직접 연결해도 됨
+        .start(dht11_enable),
+        .data(dht11_data),                
         .data_valid(data_valid),
+        .enable(dht11_enable),
         .humidity_int(humidity_int),
         .humidity_dec(humidity_dec),
         .temp_int(temp_int),
@@ -381,6 +380,7 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
     uart_controller u_uart_controller(
         .clk(clk),
         .reset(reset),
+        .print(dht11_enable),
         .send_data(input_data), 
         .rx(RsRx),
         .tx(RsTx),
@@ -401,7 +401,7 @@ always @(*) begin
     case (ahu_state)
         RESET:      state_str = "RESET";
         IDLE:       state_str = "IDLE ";
-        TIME_SETUP: state_str = "SETUP";
+        SETUP:      state_str = "SETUP";
         RUNNING:    state_str = "RUN  ";
         FINISHED:   state_str = "FINSH";
         PAUSED:     state_str = "PAUSE";

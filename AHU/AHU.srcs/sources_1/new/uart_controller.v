@@ -4,6 +4,7 @@ module uart_controller(
 
     input clk, 
     input reset,
+    input print,
     input [13:0] send_data,
     input rx,
     output tx,
@@ -30,7 +31,7 @@ module uart_controller(
     data_sender u_data_sender (
         .clk(clk), 
         .reset(reset),
-        .start_trigger(w_tick_1Hz),
+        .start_trigger(print),
         .send_data(send_data),
         .tx_busy(w_tx_busy),
         .tx_done(tx_done),

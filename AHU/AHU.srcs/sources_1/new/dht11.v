@@ -6,6 +6,7 @@ module dht11(
     input reset,
     input start,
     inout data,
+    output reg enable,
     output reg data_valid,
     output reg [7:0] humidity_int, humidity_dec, checksum,
     output reg [7:0] temp_int, temp_dec,
@@ -14,13 +15,16 @@ module dht11(
 
     // 상태 파라미터
     localparam IDLE = 3'b001;             // 대기상태
-    localparam TX_START = 3'b010;         // MCU가 DHT11에 start signal 전송, start signal 응답 대기까지
-    localparam RX_RESPONSE = 3'b011;      // DHT11의 응답을 기다림
+    localparam TX_START = 3'b010;         // 시작 신호 전송
+    localparam RX_RESPONSE = 3'b011;      // DHT11 응답
     localparam RX_DATA = 3'b100;          // 40bit 데이터 수신중
     localparam RX_DONE = 3'b101;          // 수신 완료 후 파싱 및 유효 처리
+    localparam COOL_TIME = 3'b110;        // 쿨타임
+
     localparam RX_ERROR = 3'b111;         // 응답 실패, 시간 초과 등 오류 상태
 
     // DHT11 센서 통신 타이밍 상수 (단위: 마이크로초)
+    localparam COOL_TIME_US = 1000000; // 1s 1000000us    cool time
 
     localparam DHT_COMMON_TIMEOUT      = 20000;   // 공통 타임아웃 (20ms)
 
@@ -33,8 +37,10 @@ module dht11(
 
     localparam DHT_BIT_START_LOW_US    = 50;      // 각 bit 시작 LOW 구간
 
-    localparam DHT_BIT_HIGH_0_US       = 26;      // bit 0: HIGH 약 26~28us
+    localparam DHT_BIT_HIGH_0_US       = 28;      // bit 0: HIGH 약 26~28us
     localparam DHT_BIT_HIGH_1_US       = 70;      // bit 1: HIGH 약 70us
+
+    localparam DHT_EXTRA_US            = 100;     // 추가 여유 us 
 
     localparam DHT_DATA_BITS           = 40;      // 총 데이터 비트 수 (5바이트 = 40비트)
 
@@ -42,12 +48,11 @@ module dht11(
     reg [2:0] debug_state; // 디버그용 상태 저장
     reg [1:0] step;
 
-    reg [39:0] us_counter;          // 마이크로초 단위 시간 측정용
+    reg [$clog2(COOL_TIME_US)-1:0] us_counter =0; 
     reg [5:0] bit_index;            // 0 ~ 39 비트 인덱스
     reg [39:0] data_bits;           // 수신 데이터
 
     reg [7:0]  high_counter;    // HIGH 유지 시간 측정용
-    reg prev_data_in;    // data_in의 이전 값
 
     // inout 제어용
     reg data_out = 1'b1;        // 기본 high
@@ -77,18 +82,16 @@ module dht11(
         data_out <= 1;
         step <= 0;
 
-
-        prev_data_in  <= 1;
         high_counter <= 0;
         data_valid <= 1'b0;
+        enable <= 1;
 
     end else begin
         case (dht11_state)
             IDLE: begin
-                if (start) begin
+                if (enable && start) begin
                     // 최기화
                     data_valid <= 1'b0;
-                    prev_data_in  <= 1;
                     high_counter <= 0;
 
 
@@ -98,6 +101,8 @@ module dht11(
                     us_counter <= 0;
                     dht11_state <= TX_START;
                     step <= 1;
+
+                    enable <= 0;
                 end
             end
 
@@ -105,21 +110,21 @@ module dht11(
                 if (w_tick_us) begin
                     us_counter <= us_counter + 1;
 
-                    // 1단계: LOW 유지
+                    // 1단계: LOW 유지 ( 18ms)
                     if (us_counter < DHT_START_LOW_US) begin
                         step <= 1;
                         data_out_en <= 1;
                         data_out <= 0; // LOW
                     end
 
-                    // 2단계: HIGH 출력
+                    // 2단계: HIGH 유지 ( 40us)
                     else if (us_counter < DHT_START_LOW_US + DHT_START_RELEASE_US) begin
                         step <= 2;
                         data_out_en <= 1;
                         data_out <= 1; // HIGH
                     end
 
-                    // 3단계: 입력 모드로 전환
+                    // 3단계: 응답 대기모드로
                     else begin
                         step <= 1;
                         data_out_en <= 0;  // high-Z (입력 대기)
@@ -131,15 +136,22 @@ module dht11(
 
             RX_RESPONSE: begin
                 if (w_tick_us) begin
+
                     us_counter <= us_counter + 1;
 
                     // 1단계: LOW 응답 대기
                     if (step == 1) begin
-                        if (data_in == 0) begin
-
+                        
+                        // low 응답 대기 80us
+                        if(data_in == 0) begin
+                            if(us_counter > DHT_RESP_LOW_US + DHT_EXTRA_US) begin
+                                debug_state <= RX_RESPONSE;
+                                dht11_state <= RX_ERROR;
+                                us_counter <= 0;
+                            end
                         end
-                        else if (data_in == 1 && us_counter >= DHT_RESP_LOW_US) begin
-                            // HIGH 감지로 전환 ( step2)
+                        else if (data_in == 1) begin
+                            // step2 전환
                             us_counter <= 0;
                             step <= 2;
                         end
@@ -148,13 +160,20 @@ module dht11(
                     // 2단계: HIGH 응답 대기
                     else if (step == 2) begin
                         if (data_in == 1) begin
-                            // HIGH 상태 유지 중
-                            if (us_counter >= DHT_RESP_HIGH_US) begin
+                            // HIGH 응답대기 80us
+                            if (us_counter > DHT_RESP_HIGH_US + DHT_EXTRA_US) begin
+                                debug_state <= RX_RESPONSE;
+                                dht11_state <= RX_ERROR;
                                 us_counter <= 0;
-                                bit_index <= 0;
-                                step <= 1;                // step 초기화
-                                dht11_state <= RX_DATA;   // 다음 상태 전이
                             end
+                        end
+                        else if(data_in == 0) begin
+                            // data low로 전환, high 80us 이내 유지 성공
+                            // 다음 state 전환
+                            us_counter <= 0;
+                            bit_index <= 0;
+                            step <= 1;                // step 초기화
+                            dht11_state <= RX_DATA;   // 다음 상태 전이
                         end
                     end
 
@@ -168,30 +187,38 @@ module dht11(
 
             RX_DATA: begin
                 if (w_tick_us) begin
+                    // dht11이 data 전송시 각 데이터 비트는 50us low로 유지
+                    // 이후 들어오는 high 신호 길이에 따라 데이터 0인지 1인지 구분함
                     us_counter <= us_counter + 1;       // 공통 타임아웃 측정용 카운터 증가
-                    prev_data_in <= data_in;            // 이전 클럭에서의 data_in 값 저장 (엣지 감지용)
 
-                    // step 1: LOW → HIGH 상승 엣지를 기다림 (비트 시작 구간)
+                    // 1단계: low 50us 유지
                     if (step == 1) begin
-                        if (prev_data_in == 0 && data_in == 1) begin
-                            high_counter <= 0;          // HIGH 유지 시간 측정용 카운터 초기화
-                            step <= 2;                  // 다음 단계로 전환 (HIGH 구간 측정)
+                        // low 응답 유지
+
+                        if(data_in == 0) begin
+                            if(us_counter > DHT_BIT_START_LOW_US + DHT_EXTRA_US) begin
+                                debug_state <= RX_DATA;
+                                dht11_state <= RX_ERROR;
+                                us_counter <= 0;
+                            end
+                        end
+                        else if (data_in == 1) begin
+                            // step2 전환
+                            us_counter <= 0;
+                            high_counter <= 0;
+                            step <= 2;
                         end
                     end
+                    else if(step == 2) begin
 
-                    // step 2: HIGH 구간 유지 시간 측정 → 이후 HIGH → LOW 하강 엣지에서 bit 판별
-                    else if (step == 2) begin
-                        if (data_in == 1) begin
-                            high_counter <= high_counter + 1; // HIGH 구간 지속 시간 카운트 (us 단위)
-                        end 
-                        else if (data_in == 0 && prev_data_in == 1) begin  // 하강 엣지 감지
-                            if (bit_index < DHT_DATA_BITS) begin
-                                // HIGH 지속 시간이 길면 '1', 짧으면 '0'으로 판단
-                                data_bits[DHT_DATA_BITS - 1 - bit_index] <= (high_counter > 40) ? 1'b1 : 1'b0;
+                        // high 상태의 길이를 체크
+                        high_counter <= high_counter + 1;
 
-                                bit_index <= bit_index + 1;   // 다음 비트 수신 준비
-                                step <= 1;                    // 다시 step 1로 복귀 (다음 비트 수신 대기)
-                            end
+                        // low상태로 전환되었을 때
+                        if(data_in == 0) begin
+                            data_bits[DHT_DATA_BITS - 1 - bit_index] <= (high_counter > DHT_BIT_HIGH_0_US) ? 1'b1 : 1'b0;
+                            bit_index <= bit_index + 1;   // 다음 비트 수신 준비
+                            step <= 1;                    // 다시 step 1로 복귀 (다음 비트 수신 대기)
 
                             // 모든 40비트 수신이 끝났다면 완료 처리
                             if (bit_index == DHT_DATA_BITS - 1) begin
@@ -225,23 +252,29 @@ module dht11(
                     debug_state <= RX_DONE;
                 end
 
-                dht11_state <= IDLE;
+                dht11_state <= COOL_TIME;
+                us_counter <= 0;              // 타이머 초기화
             end
 
-            RX_ERROR: begin
+            COOL_TIME: begin
                 if(w_tick_us) begin
-                    // 오류 상태 → 일정 시간 후 IDLE 복귀
-                    if (us_counter == 100000 -1) begin
+                    if (us_counter == COOL_TIME_US) begin
                         us_counter <= 0;
                         dht11_state <= IDLE;
-
                         data_out_en <= 0;
                         data_out <= 1;
+                        step <= 0;
 
+                        enable <= 1; // 다시 enable 상태로
                     end else begin
                         us_counter <= us_counter + 1;
                     end
                 end
+            end
+
+            RX_ERROR: begin
+                dht11_state <= COOL_TIME;
+                us_counter <= 0;              // 타이머 초기화
             end
 
             default: dht11_state <= IDLE;

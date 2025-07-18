@@ -16,7 +16,7 @@ module ahu_fnd(
     // bit flag로 ( led 확인 쉽게할라구)
     parameter RESET      = 5'b00000;
     parameter IDLE       = 5'b00001;
-    parameter TIME_SETUP = 5'b00010;
+    parameter SETUP      = 5'b00010;
     parameter RUNNING    = 5'b00100;
     parameter FINISHED   = 5'b01000;
     parameter PAUSED     = 5'b10000;
@@ -56,7 +56,7 @@ module ahu_fnd(
                     fnd_mode = USE_SEG;
                     for (i = 0; i < 4; i = i + 1) r_d[i] = SEG_IDLE;
                 end
-                TIME_SETUP: begin
+                SETUP: begin
                     // 남은 시간 표시
                     fnd_mode = USE_TIME;
                 end
