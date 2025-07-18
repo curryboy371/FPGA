@@ -18,6 +18,45 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
     output servo;
     inout dht11_data;
 
+    localparam BTN_CENTER = 3'd0;    // 선택
+    localparam BTN_UP = 3'd1;        // depth up
+    localparam BTN_LEFT = 3'd2;      // 모터 파워 다운
+    localparam BTN_RIGHT = 3'd3;     // 모터 파워 UP
+    localparam BTN_DOWN = 3'd4;      // depth down, back
+    localparam BTN_MAX = 3'd5;
+
+
+    localparam INDEX_TEMP = 3'd0;
+    localparam INDEX_HUMID = 3'd1;
+    localparam INDEX_TIME = 3'd2;
+    localparam INDEX_STEP_MAX = 3'd3;
+
+    localparam MIN_TEMP = 1;   
+    localparam MAX_TEMP = 120;  
+
+    localparam MIN_HUMID = 10;   
+    localparam MAX_HUMID = 100;  
+
+    localparam MIN_TIME = 30;   
+    localparam MAX_TIME = 600;  
+
+
+    localparam INDEX_DHT11          = 2'd0;
+    localparam INDEX_HC_SR04        = 2'd1;
+    localparam INDEX_DEVICE_MAX     = 2'd2;
+
+
+    localparam MIN_DISTANCE = 5;  
+
+    reg [13:0] ahu_setting_values [INDEX_STEP_MAX-1:0];     // 세팅값
+    reg [13:0] ahu_getting_values [INDEX_STEP_MAX-1:0];     // 디바이스에서 받은 값
+
+    reg [13:0] ahu_value; // 인자 전달용
+
+    reg [13:0] step_min;
+    reg [13:0] step_max;
+
+
     wire w_tick;
     tick_generator u_tick_generator (
         .clk(clk),           
@@ -34,12 +73,7 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
         .toggle(w_toggle_1s)
     );
 
-    parameter BTN_CENTER = 3'd0;
-    parameter BTN_UP = 3'd1;        // 오픈
-    parameter BTN_LEFT = 3'd2;      // 모터 파워 다운
-    parameter BTN_RIGHT = 3'd3;     // 모터 파워 UP
-    parameter BTN_DOWN = 3'd4;      // 클로즈
-    parameter BTN_MAX = 3'd5;
+
 
     wire [BTN_MAX-1:0] clean_btn_edge;
     btn_edge_detector #(.WIDTH(BTN_MAX)) U_btn_edge_detector (
@@ -51,10 +85,11 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
 
     //  메인 모드..
     // bit flag로 ( led 확인 쉽게할라구)
-    parameter RESET      = 5'b00000;
+    parameter WARN       = 5'b00000;
     parameter IDLE       = 5'b00001;
-    parameter SETUP = 5'b00010;
+    parameter SETUP      = 5'b00010;
     parameter RUNNING    = 5'b00100;
+
     parameter FINISHED   = 5'b01000;
     parameter PAUSED     = 5'b10000;
 
@@ -62,9 +97,6 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
     parameter DOOR_CLOSED = 1'b0;
     parameter DOOR_OPEN   = 1'b1;
 
-    parameter DEFAULT_TIME = 5;
-    parameter MIN_TIME = 5;  // 
-    parameter MAX_TIME = 600; // 
 
     parameter FINISH_WAIT_SEC = 5;
 
@@ -72,113 +104,349 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
 
     reg [4:0] ahu_state = IDLE;
 
+    reg [2:0] state_step = 0;
+
     reg [12:0] ahu_time = 0;
 
     reg [4:0] finish_wait = 5; 
+    reg [4:0] warn_wait = 5; 
+
 
     reg [3:0] r_duty_cycle; // 1~10
 
     wire w_done_cycle;  // 부저 완료 sign ( 버튼 입력 딜레이로 사용함)
 
+
+    //  device_start[INDEX_DHT11] <= 0;
+    //  device_start[INDEX_HC_SR04] <= 0;
+    reg [INDEX_DEVICE_MAX -1:0] device_start;
+    wire [INDEX_DEVICE_MAX -1:0] device_enable;
+
+    wire [13:0] w_distance;
+    hc_sr04 u_hc_sr04(
+        .clk(clk),        
+        .reset(reset),
+        .start(device_start[INDEX_HC_SR04]),
+        .enable(device_enable[INDEX_HC_SR04]),
+        .trigger(trigger),
+        .echo(echo),
+        .led(led),
+        .distance(w_distance)
+    );
+
+    // 내부 연결 신호 정의
+    wire [7:0] humidity_int, humidity_dec, temp_int, temp_dec, checksum;
+    wire data_valid;
+
+    reg [13:0] input_data;
+
+
+    localparam OPEN_ANGLE = 8'd0;
+    localparam CLOSE_ANGLE = 8'd180;
+    reg [7:0] angle = CLOSE_ANGLE;
+
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            input_data <= 14'd0;
+        end else if (data_valid) begin
+            input_data <= {6'b000000, humidity_int};  // 상위 6비트 0 패딩
+        end else begin
+            input_data <= 0;
+        end
+    end
+
+    // dht11 모듈 인스턴스
+    dht11 u_dht11 (
+        .clk(clk),
+        .reset(reset),
+        .start(device_start[INDEX_DHT11]),
+        .data(dht11_data),                
+        .data_valid(data_valid),
+        .enable(device_enable[INDEX_DHT11]),
+        .humidity_int(humidity_int),
+        .humidity_dec(humidity_dec),
+        .temp_int(temp_int),
+        .temp_dec(temp_dec),
+        .checksum(checksum)
+        //.led(led)
+    );
+
+
+
+
+
+
+
     // 전자레인지 상태에 따른 입력 및 time 처리
     always @(posedge clk or posedge reset) begin
         if (reset) begin
-            ahu_state <= RESET;
+            ahu_state <= IDLE;
+            state_step <= 0;
             r_duty_cycle <=0;
             door_state <= DOOR_OPEN;
+
+            ahu_setting_values[INDEX_TEMP] <= 0;
+            ahu_setting_values[INDEX_HUMID] <= 0;
+            ahu_setting_values[INDEX_TIME] <= 0;
+
+            ahu_getting_values[INDEX_TEMP] <= 0;
+            ahu_getting_values[INDEX_HUMID] <= 0;
+            ahu_getting_values[INDEX_TIME] <= 0;
+            
+
+            ahu_value <= 0;
+
+            step_min <= 0;
+            step_max <= 0;
+
+            device_start[INDEX_DHT11] <= 0;
+            device_start[INDEX_HC_SR04] <= 0;
+
+            angle <= CLOSE_ANGLE;
 
         end else begin
             case (ahu_state)
                 IDLE: begin
-                    if(door_state == DOOR_CLOSED) begin 
+                    if(w_done_cycle) begin
+                        if(clean_btn_edge[BTN_RIGHT]) begin
+                            angle <= CLOSE_ANGLE;
+                        end
+                        
+                        if(clean_btn_edge[BTN_LEFT]) begin
+                            angle <= OPEN_ANGLE;
+                        end
 
-                        if(w_done_cycle) begin
-                            if(clean_btn_edge[BTN_CENTER]) begin
-                                ahu_state <= SETUP;
-                                ahu_time <= DEFAULT_TIME;
+                        if(clean_btn_edge[BTN_CENTER] | clean_btn_edge[BTN_UP]) begin
 
-                                finish_wait <= FINISH_WAIT_SEC;
-                            end
+                            angle <= CLOSE_ANGLE;
+
+                            ahu_state <= SETUP;
+
+                            ahu_setting_values[INDEX_TEMP] <= MIN_TEMP;
+                            ahu_setting_values[INDEX_HUMID] <= MIN_HUMID;
+                            ahu_setting_values[INDEX_TIME] <= MIN_TIME;
+                            ahu_value <= MIN_TEMP;
+
+                            state_step <= INDEX_TEMP;
+                            step_min <= MIN_TEMP;
+                            step_max <= MAX_TEMP;
+
+
+                            finish_wait <= FINISH_WAIT_SEC;
                         end
                     end
                 end
                 SETUP: begin
-                    if(door_state == DOOR_CLOSED) begin 
+                    if(w_done_cycle) begin
 
-                        if(w_done_cycle) begin
+                        // 온,습,시 설정
+                        case (state_step)
+                            INDEX_TEMP: begin // 온도 설정
 
-                            if(clean_btn_edge[BTN_RIGHT]) begin
-                                if (ahu_time + MIN_TIME <= MAX_TIME)
-                                    ahu_time <= ahu_time + MIN_TIME;
-                                else
-                                    ahu_time <= MAX_TIME; 
+                                if(clean_btn_edge[BTN_UP]) begin
+                                    step_min <=MIN_HUMID;
+                                    step_max <= MAX_HUMID;
+                                    ahu_value <= ahu_setting_values[INDEX_HUMID];
+                                    state_step <= INDEX_HUMID;
+                                end
+
+                                // pre step이 없는데 down인 경우 취소
+                                if(clean_btn_edge[BTN_DOWN]) begin
+                                    ahu_state <= IDLE;
+                                end
                             end
 
-                            if(clean_btn_edge[BTN_LEFT]) begin
-                                if (ahu_time >= MIN_TIME + MIN_TIME)
-                                    ahu_time <= ahu_time - MIN_TIME;
-                                else
-                                    ahu_time <= MIN_TIME;
+                            INDEX_HUMID: begin // 습도 설정
+                            
+                                if(clean_btn_edge[BTN_UP]) begin
+                                    step_min <= MIN_TIME;
+                                    step_max <= MAX_TIME;
+                                    ahu_value <= ahu_setting_values[INDEX_TIME];
+                                    state_step <= INDEX_TIME;
+                                end
+
+                                if(clean_btn_edge[BTN_DOWN]) begin
+                                    step_min <= MIN_TEMP;
+                                    step_max <= MAX_TEMP;
+                                    ahu_value <= ahu_setting_values[INDEX_TEMP];
+                                    state_step <= INDEX_TEMP;
+                                end
+
+                            end
+                            
+                            INDEX_TIME: begin // 시간 설정
+                                // next step이 없는데 up인 경우 run
+                                if(clean_btn_edge[BTN_UP]) begin
+                                    ahu_state <= RUNNING;
+                                    state_step <= INDEX_TEMP;
+                                end
+
+                                if(clean_btn_edge[BTN_DOWN]) begin
+                                    step_min <= MIN_HUMID;
+                                    step_max <= MAX_HUMID;
+                                    ahu_value <= ahu_setting_values[INDEX_HUMID];
+                                    state_step <= INDEX_HUMID;
+                                end
+
                             end
 
-                            if(clean_btn_edge[BTN_CENTER]) begin
-                                ahu_state <= RUNNING;
+                            default: begin
+                                state_step <= INDEX_TEMP;
                             end
-                        end
-                    end
 
-                end
-                RUNNING: begin
+                        endcase
 
-                    if(door_state == DOOR_CLOSED) begin 
-                        r_duty_cycle <=7;
-                        if(w_tick_1s) begin
-                            if(ahu_time <= 0) begin
-                                ahu_state <= FINISHED;
+                        // 값 증가
+                        if(clean_btn_edge[BTN_RIGHT]) begin
+                            if (ahu_setting_values[state_step] + step_min <= step_max) begin
+                                ahu_setting_values[state_step] <= ahu_setting_values[state_step] + step_min;
+                                ahu_value <= ahu_setting_values[state_step] + step_min;
                             end
                             else begin
-                                ahu_time <= ahu_time - 1;
+                                ahu_setting_values[state_step] <= step_max; 
+                                ahu_value <= step_max;
                             end
                         end
 
-                        // 일시정지 버튼
-                        if(w_done_cycle) begin
-                            if(clean_btn_edge[BTN_CENTER]) begin
-                                ahu_state <= PAUSED;
+                        // 값 감소
+                        if(clean_btn_edge[BTN_LEFT]) begin
+                            if (ahu_setting_values[state_step] - step_min > step_min) begin
+                                ahu_setting_values[state_step] <= ahu_setting_values[state_step] - step_min;
+                                ahu_value <= ahu_setting_values[state_step] - step_min;
+                            end
+                            else begin
+                                ahu_setting_values[state_step] <= step_min; 
+                                ahu_value <= step_min;
                             end
                         end
 
+                        // run
+                        if(clean_btn_edge[BTN_CENTER]) begin
+                            ahu_state <= RUNNING;
+                            state_step <= INDEX_TEMP;
+
+                            ahu_getting_values[INDEX_TIME] <= ahu_setting_values[INDEX_TIME];
+
+                        end
+
                     end
-                    else begin 
-                        r_duty_cycle <=0;
+                end
+                RUNNING: begin
+                    device_start[INDEX_DHT11] <= 1;
+                    device_start[INDEX_HC_SR04] <= 1;
+
+                    // 현재 온도 출력
+                    if(clean_btn_edge[BTN_UP]) begin
+                        if(state_step + 1 == INDEX_STEP_MAX) begin
+                            state_step <= INDEX_TEMP;
+                            ahu_value <= ahu_getting_values[INDEX_TEMP];
+
+                        end
+                        else begin
+                            ahu_value <= ahu_getting_values[state_step + 1];
+                            state_step <= state_step + 1;
+                        end
+                    end
+                    else if(clean_btn_edge[BTN_DOWN]) begin
+                        if(state_step == INDEX_TEMP) begin
+                            ahu_value <= ahu_getting_values[INDEX_TIME];
+                            state_step <= INDEX_TIME;
+                        end
+                        else begin
+                            ahu_value <= ahu_getting_values[state_step - 1];
+                            state_step <= state_step - 1;
+                        end
+                    end
+                    else begin
+                        // 버튼 눌림 x
+                        ahu_value <= ahu_getting_values[state_step];
                     end
 
+                    // 거리 체크
+                    // if(device_enable[INDEX_HC_SR04]) begin 
+
+                    //     if(w_distance < MIN_DISTANCE) begin
+                    //         ahu_state <= WARN;
+                    //     end
+                    //     else begin
+
+                    //     end
+                    // end
+
+                    // 온도 체크 - dc 모터 제어
+                    // 습도 체크 - 서보모터 제어
+                    if(device_enable[INDEX_DHT11]) begin
+                        if(data_valid) begin
+                            ahu_getting_values[INDEX_TEMP] <= {6'b000000, temp_int};
+                            ahu_getting_values[INDEX_HUMID] <= {6'b000000, humidity_int}; 
+
+                            // 온도 비교
+                            if({6'b000000, temp_int} > ahu_setting_values[INDEX_TEMP]) begin
+                                r_duty_cycle <=7;
+                            end
+                            else begin
+                                r_duty_cycle <=0;
+                            end
+
+                            // 습도 비교
+                            if({6'b000000, humidity_int} > ahu_setting_values[INDEX_HUMID]) begin
+                                angle <= OPEN_ANGLE;
+                            end
+                            else begin
+                                angle <= CLOSE_ANGLE;
+                            end
+
+
+
+                        end
+                        else begin
+                            ahu_getting_values[INDEX_TEMP] <= 0;
+                            ahu_getting_values[INDEX_HUMID] <= 0;
+                        end
+
+                    end
+
+                    r_duty_cycle <=7;
+                    if(w_tick_1s) begin
+                        if(ahu_getting_values[INDEX_TIME] <= 0) begin
+                            ahu_state <= FINISHED;
+                        end
+                        else begin
+                            ahu_getting_values[INDEX_TIME] <= ahu_getting_values[INDEX_TIME] - 1;
+                        end
+                    end
+
+                    // 일시정지 버튼
+                    if(w_done_cycle) begin
+                        if(clean_btn_edge[BTN_CENTER]) begin
+                            ahu_state <= PAUSED;
+                        end
+                    end
                 end
 
                 PAUSED: begin
                     r_duty_cycle <=0;
-                    if(door_state == DOOR_CLOSED) begin 
-                        if(w_done_cycle) begin
-                            // 취소 버튼
-                            if(clean_btn_edge[BTN_CENTER]) begin
-                                ahu_state <= IDLE;
-                            end
-
-                            // 시간 입력버튼 누르면 다시 동작
-                            if(clean_btn_edge[BTN_RIGHT] || clean_btn_edge[BTN_LEFT]) begin
-                                ahu_state <= RUNNING;
-                            end
-
-                            // 완전히 취소 버튼
-                            if(clean_btn_edge[BTN_CENTER]) begin
-                                ahu_state <= IDLE;
-                            end
+                    if(w_done_cycle) begin
+                        // 취소 버튼
+                        if(clean_btn_edge[BTN_CENTER]) begin
+                            ahu_state <= IDLE;
                         end
 
+                        // 시간 입력버튼 누르면 다시 동작
+                        if(clean_btn_edge[BTN_RIGHT] || clean_btn_edge[BTN_LEFT]) begin
+                            ahu_state <= RUNNING;
+                        end
+
+                        // 완전히 취소 버튼
+                        if(clean_btn_edge[BTN_CENTER]) begin
+                            ahu_state <= IDLE;
+                        end
                     end
                 end
 
                 FINISHED: begin
+                    device_start[INDEX_DHT11] <= 0;
+                    device_start[INDEX_HC_SR04] <= 0;
                     r_duty_cycle <=0;
                     if(finish_wait <= 0) begin
                         ahu_state <= IDLE;
@@ -190,9 +458,12 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
                     end
 
                 end
-                RESET: begin
+                WARN: begin
+
                     r_duty_cycle <=0;
-                    ahu_state <= IDLE;
+
+
+
                 end
 
                 default:begin
@@ -204,24 +475,19 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
 
 
     // 문열고 닫기 상태 + 부저상태도
-    parameter BUZZER_IDLE      = 3'b000;
-    parameter CLOSE  = 3'b001;
-    parameter OPEN      = 3'b010;
-    parameter BUTTON      = 3'b011;
-    parameter ALARM      = 3'b100;
-
-    parameter OPEN_ANGLE = 8'd0;
-    parameter CLOSE_ANGLE = 8'd180;
+    localparam BUZZER_IDLE   = 3'b000;
+    localparam CLOSE         = 3'b001;
+    localparam OPEN          = 3'b010;
+    localparam BUTTON        = 3'b011;
+    localparam BUTTON_HIGH   = 3'b100;
+    localparam ALARM         = 3'b111;
 
     reg [2:0] buzzer_pulse = BUZZER_IDLE;
-    reg [7:0] angle = CLOSE_ANGLE;
-
 
     // 문 열림, 닫힘 및 부저음
     always @(posedge clk or posedge reset) begin
         if (reset) begin
             buzzer_pulse <= BUZZER_IDLE;
-            angle <= CLOSE_ANGLE;
             door_state <=DOOR_CLOSED;
 
         end else begin
@@ -229,36 +495,21 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
 
             if (w_done_cycle) begin
 
-                if(door_state == DOOR_CLOSED) begin // 닫혀있는 경우에만 열기
-
-                    // 버튼음 닫힌 상태에서만
-                    // open, close에서는 버튼음이 안 나도록 가장 먼저
-                    if (clean_btn_edge[BTN_CENTER] | clean_btn_edge[BTN_RIGHT] | clean_btn_edge[BTN_LEFT] ) begin
-                        buzzer_pulse <= BUTTON;
-                    end
-
-                    if (clean_btn_edge[BTN_UP]) begin
-                        door_state <= DOOR_OPEN;
-                        buzzer_pulse <= OPEN;
-                        angle <= OPEN_ANGLE;
-                    end
-                end
-                else begin // 열려있는 경우에만 닫기
-                    if (clean_btn_edge[BTN_DOWN]) begin
-                        door_state <= DOOR_CLOSED;
-                        buzzer_pulse <= CLOSE;
-                        angle <= CLOSE_ANGLE;
-                    end
+                if (clean_btn_edge[BTN_CENTER]) begin
+                    buzzer_pulse <= BUTTON;
                 end
 
-
+                // 버튼음 다르게 해도 됨
+                if (clean_btn_edge[BTN_DOWN] | clean_btn_edge[BTN_UP] | clean_btn_edge[BTN_RIGHT] | clean_btn_edge[BTN_LEFT] ) begin
+                    buzzer_pulse <= BUTTON_HIGH;
+                end
             end
 
             // FINISHED 종료 알림을 여기서도 검사하도록
             // ahu state의 always에서 buzzer pulse를 또 <= 하면 안되므로
-            if (ahu_state == RUNNING && ahu_time <= 0 && w_tick_1s) begin
-                buzzer_pulse <= ALARM; // 종료 알림
-            end
+            // if (ahu_state == RUNNING && ahu_time <= 0 && w_tick_1s) begin
+            //     buzzer_pulse <= ALARM; // 종료 알림
+            // end
         end
     end
 
@@ -278,7 +529,8 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
         .tick(w_tick),
         .toggle_1s(w_toggle_1s),
         .ahu_state(ahu_state),
-        .ahu_time(ahu_time),
+        .ahu_value(ahu_value),
+        .ahu_step(state_step),
         .door_state(door_state),
         .seg(seg),
         .an(an)
@@ -300,79 +552,7 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
     );
 
 
-    reg [1:0] state;
-    localparam S_IDLE = 0, S_START = 1, S_DONE = 2;
 
-    wire hc_sr04_enable;
-    reg r_hc_sr04_start = 0;
-    wire [13:0] w_distance;
-    hc_sr04 u_hc_sr04(
-        .clk(clk),        
-        .reset(reset),
-        .start(r_hc_sr04_start),           // true시 시작 가능
-        .enable(hc_sr04_enable),
-        .trigger(trigger),
-        .echo(echo),
-        //.led(led),
-        .distance(w_distance)
-    );
-
-    always @(posedge clk or posedge reset) begin
-        if (reset) begin
-            r_hc_sr04_start <= 1;  // default HIGH
-            state <= S_IDLE;
-        end else begin
-            case (state)
-                S_IDLE: begin
-                    if (hc_sr04_enable) begin
-                        r_hc_sr04_start <= 0;  // 트리거 1클럭
-                        state <= S_START;
-                    end
-                end
-                S_START: begin
-                    r_hc_sr04_start <= 1;
-                    state <= S_DONE;
-                end
-                S_DONE: begin
-                    if (!hc_sr04_enable) begin
-                        state <= S_IDLE;  // 다음 주기 준비
-                    end
-                end
-            endcase
-        end
-    end
-
-    // 내부 연결 신호 정의
-    wire [7:0] humidity_int, humidity_dec, temp_int, temp_dec, checksum;
-    wire data_valid;
-
-    reg [13:0] input_data;
-
-    always @(posedge clk or posedge reset) begin
-        if (reset) begin
-            input_data <= 14'd0;
-        end else if (data_valid) begin
-            input_data <= {6'b000000, humidity_int};  // 상위 6비트 0 패딩
-        end else begin
-            input_data <= 0;
-        end
-    end
-
-    // dht11 모듈 인스턴스
-    dht11 u_dht11 (
-        .clk(clk),
-        .reset(reset),
-        .start(dht11_enable),
-        .data(dht11_data),                
-        .data_valid(data_valid),
-        .enable(dht11_enable),
-        .humidity_int(humidity_int),
-        .humidity_dec(humidity_dec),
-        .temp_int(temp_int),
-        .temp_dec(temp_dec),
-        .checksum(checksum),
-        .led(led)
-    );
             
 
     wire [7:0] w_rx_data;
@@ -380,8 +560,8 @@ module top(clk, reset, btn, motor_direction, echo, trigger, RsRx, RsTx, PWM_OUT,
     uart_controller u_uart_controller(
         .clk(clk),
         .reset(reset),
-        .print(dht11_enable),
-        .send_data(input_data), 
+        .print(device_enable[INDEX_HC_SR04]),
+        .send_data(w_distance), 
         .rx(RsRx),
         .tx(RsTx),
         .rx_data(w_rx_data),
@@ -399,7 +579,6 @@ reg [39:0] state_str;
 
 always @(*) begin
     case (ahu_state)
-        RESET:      state_str = "RESET";
         IDLE:       state_str = "IDLE ";
         SETUP:      state_str = "SETUP";
         RUNNING:    state_str = "RUN  ";

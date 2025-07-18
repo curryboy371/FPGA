@@ -9,8 +9,8 @@ module dht11(
     output reg enable,
     output reg data_valid,
     output reg [7:0] humidity_int, humidity_dec, checksum,
-    output reg [7:0] temp_int, temp_dec,
-    output [15:0] led
+    output reg [7:0] temp_int, temp_dec
+    //output [15:0] led
 );
 
     // 상태 파라미터
@@ -282,9 +282,8 @@ module dht11(
         endcase
     end
 end
-
-    assign led[2:0] = debug_state;    // 하위 3비트: 디버그 상태
-    assign led[5:3] = dht11_state;    // 중간 3비트: FSM 상태
-    assign led[7:6] = step;           // 상위 2비트: step 단계 (1~3)
+    // assign led[2:0] = debug_state;    // 하위 3비트: 디버그 상태
+    // assign led[5:3] = dht11_state;    // 중간 3비트: FSM 상태
+    // assign led[7:6] = step;           // 상위 2비트: step 단계 (1~3)
 
 endmodule

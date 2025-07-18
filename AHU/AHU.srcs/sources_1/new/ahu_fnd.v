@@ -1,11 +1,14 @@
+`timescale 1ns / 1ps
+
 module ahu_fnd(
     input clk,
     input reset,
     input tick,
     input toggle_1s,
     input [4:0] ahu_state,
+    input [13:0] ahu_value,
+    input [2:0] ahu_step,
     input door_state,
-    input [12:0] ahu_time,
     output [7:0] seg,
     output [3:0] an
 );
@@ -114,7 +117,7 @@ module ahu_fnd(
     fnd_controller u_fnd_controller(
         .clk(clk),
         .reset(reset),
-        .input_data((ahu_time / 60) * 100 + (ahu_time % 60)),
+        .input_data((ahu_value / 60) * 100 + (ahu_value % 60)),
         .seg_data(w_seg_data),
         .an(w_an_data)
     );

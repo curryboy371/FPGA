@@ -7,7 +7,7 @@ module hc_sr04(
     input echo,
     output reg enable,              // 사용 가능 여부 ( active high )
     output reg trigger,
-    //output [15:0] led,
+    output [15:0] led,
     output reg [13:0] distance
     );
 
@@ -23,7 +23,9 @@ module hc_sr04(
     // 상수값 설정
     localparam TRIGGER_US = 15;
     localparam MAX_ECHO_US = 38000; // 38ms 38000us     측청 가능 최대 거리
-    localparam COOL_TIME_US = 80000; // 80ms 80000us    cool time
+    //localparam COOL_TIME_US = 80000; // 80ms 80000us    cool time
+    localparam COOL_TIME_US = 1000000; // 1s 1000000us    cool time
+
 
     reg [2:0] debug_state; // 디버그용 상태 저장
 
@@ -46,10 +48,9 @@ module hc_sr04(
             enable <= 1;
         end else begin
 
-
             case(hc_sr04_state)
                 IDLE: begin
-                    if(!start) begin 
+                    if(start && enable) begin 
                         r_us_count <= 0;
                         hc_sr04_state <= TRIGGER;
                         trigger <= 1;
@@ -123,7 +124,7 @@ module hc_sr04(
         end
     end
 
-    // assign led[2:0] = debug_state; // LED 3개에 상태 보여주기
-    // assign led[5:3] = hc_sr04_state; // LED 3개에 상태 보여주기
+    assign led[2:0] = debug_state; // LED 3개에 상태 보여주기
+    assign led[5:3] = hc_sr04_state; // LED 3개에 상태 보여주기
 endmodule
 

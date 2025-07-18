@@ -23,11 +23,14 @@ module buzzer_sequence(
     parameter DIV_G4    = 127551;
     parameter DIV_CS5   = 90252;
 
-    parameter BUZZER_IDLE       = 3'b000;
-    parameter CLOSE             = 3'b001;
-    parameter OPEN              = 3'b010;
-    parameter BUTTON            = 3'b011;
-    parameter ALARM             = 3'b100;
+    localparam BUZZER_IDLE   = 3'b000;
+    localparam CLOSE         = 3'b001;
+    localparam OPEN          = 3'b010;
+    localparam BUTTON        = 3'b011;
+    localparam BUTTON_HIGH   = 3'b100;
+    localparam ALARM         = 3'b111;
+
+
 
     reg [2:0] buzzer_state = BUZZER_IDLE;
 
@@ -80,6 +83,12 @@ module buzzer_sequence(
                                 freq_div_arr[1] <= DIV_1KHZ; delay_arr[1] <= TIME_30MS;
                                 freq_div_arr[2] <= 0;        delay_arr[2] <= TIME_30MS;
                                 step_max <= 3;
+                            end
+
+                            BUTTON_HIGH: begin
+                                freq_div_arr[0] <= DIV_1KHZ; delay_arr[0] <= TIME_30MS;
+                                freq_div_arr[1] <= 0;        delay_arr[1] <= TIME_30MS;
+                                step_max <= 2;
                             end
 
                             ALARM: begin
