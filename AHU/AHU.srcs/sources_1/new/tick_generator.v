@@ -11,8 +11,6 @@
     output reg toggle  // 토글 유지
  );   
 
-    //parameter INPUT_FREQ = 100_000_000;
-    //parameter TICK_HZ = 1000;  
     parameter TICK_COUNT =  INPUT_FREQ / TICK_HZ;   // 100_000
 
     reg [$clog2(TICK_COUNT)-1:0] r_tick_counter =0;  // 16 bits

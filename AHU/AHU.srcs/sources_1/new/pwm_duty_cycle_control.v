@@ -4,7 +4,8 @@
 module pwm_duty_cycle_control (
     input clk,
     input [3:0] duty_cycle,  // 0 ~ 9
-    output PWM_OUT           // 10MHz PWM output signal
+    output PWM_OUT,           // 10MHz PWM output signal
+    output led
 ); 
 
     reg [3:0] r_counter_PWM = 0;
@@ -18,5 +19,6 @@ module pwm_duty_cycle_control (
     end
 
     assign PWM_OUT = (r_counter_PWM < duty_cycle) ? 1 : 0;
+    assign led = PWM_OUT;
 
 endmodule

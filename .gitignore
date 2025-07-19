@@ -1,2 +1,78 @@
-/mealy_fsm_twice
-/project_shift_register
+# ---- General ----
+*.log
+*.jou
+*.bak
+*.tmp
+*.swp
+*~
+
+# ---- Vivado / Xilinx ----
+*.xpr
+*.Xil
+*.cache/
+*.hw/
+*.ip_user_files/
+*.sim/
+*.runs/
+*.data/
+*.webtalk/
+*.vivado/
+*.srcs/
+*.str
+
+# Vivado-generated reports
+*.rpt
+*.xml
+*.html
+*.wdb
+
+# ---- Quartus ----
+db/
+incremental_db/
+output_files/
+*.qws
+*.qsf
+*.sdc
+*.sdf
+*.jdi
+*.cmp
+*.rpt
+
+# ---- ModelSim ----
+modelsim.ini
+transcript
+vsim.wlf
+*.wlf
+work/
+*.vstf
+*.vcd
+*.sav
+
+# ---- Icarus Verilog ----
+*.vvp
+*.vcd
+
+# ---- GTKWave ----
+*.gtkw
+*.sav
+
+# ---- Simulation / Temporary ----
+*.out
+*.vcd
+*.vvp
+*.lst
+*.bin
+*.mem
+
+# ---- SystemVerilog Coverage ----
+*.ucdb
+*.cov
+
+# ---- VSCode / IDEs ----
+.vscode/
+.idea/
+*.code-workspace
+
+# ---- OS-specific ----
+.DS_Store
+Thumbs.db

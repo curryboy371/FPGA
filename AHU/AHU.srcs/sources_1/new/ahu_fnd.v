@@ -39,6 +39,7 @@ module ahu_fnd(
     parameter USE_SEG  = 2'b00;
     parameter USE_TIME = 2'b01;
     parameter USE_CYCLE = 2'b10;
+    parameter USE_NUM = 2'b11;
     reg [1:0] fnd_mode = USE_SEG;
 
     reg [7:0] r_d [3:0];  // 배열로 변경
@@ -61,11 +62,17 @@ module ahu_fnd(
                 end
                 SETUP: begin
                     // 남은 시간 표시
-                    fnd_mode = USE_TIME;
+                    if(ahu_step == 2)
+                        fnd_mode = USE_TIME;
+                    else
+                        fnd_mode = USE_NUM;
                 end
                 RUNNING: begin
                     if (toggle_1s) begin
-                        fnd_mode = USE_TIME;
+                        if(ahu_step == 2)
+                            fnd_mode = USE_TIME;
+                        else
+                            fnd_mode = USE_NUM;
                     end else begin
                         fnd_mode = USE_CYCLE;
                     end
@@ -73,7 +80,10 @@ module ahu_fnd(
 
                 PAUSED: begin
                     // 남은 시간 표시
-                    fnd_mode = USE_TIME;
+                    if(ahu_step == 2)
+                        fnd_mode = USE_TIME;
+                    else
+                        fnd_mode = USE_NUM;
                 end
 
                 FINISHED: begin
@@ -111,6 +121,18 @@ module ahu_fnd(
         .an(w_an_cycle)
     );
 
+
+    // fnd_controller : number
+    wire [7:0] w_seg_num;
+    wire [3:0] w_an_num;
+    fnd_controller u_fnd_controller_num(
+        .clk(clk),
+        .reset(reset),
+        .input_data(ahu_value),
+        .seg_data(w_seg_num),
+        .an(w_an_num)
+    );
+
     // fnd_controller : MMSS
     wire [7:0] w_seg_data;
     wire [3:0] w_an_data;
@@ -138,12 +160,15 @@ module ahu_fnd(
     );
 
     // 출력
-    assign seg = (fnd_mode == USE_TIME)  ? w_seg_data :
-                (fnd_mode == USE_CYCLE) ? w_seg_cycle :
-                                        w_seg_row;
-    assign an  = (fnd_mode == USE_TIME)  ? w_an_data :
-                (fnd_mode == USE_CYCLE) ? w_an_cycle :
-                                        w_an_row;
+    assign seg = (fnd_mode == USE_TIME)   ? w_seg_data  :
+                 (fnd_mode == USE_CYCLE)  ? w_seg_cycle :
+                 (fnd_mode == USE_NUM)    ? w_seg_num   :
+                                            w_seg_row;
+
+    assign an  = (fnd_mode == USE_TIME)   ? w_an_data   :
+                 (fnd_mode == USE_CYCLE)  ? w_an_cycle  :
+                 (fnd_mode == USE_NUM)    ? w_an_num    :
+                                            w_an_row;
 
 
 endmodule
