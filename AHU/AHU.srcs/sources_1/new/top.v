@@ -19,33 +19,43 @@ module top(
     inout dht11_data           // DHT11 센서 (inout)
 );
 
-    reg [1:0] prev_mode;
-    reg [1:0] reset_pulse;
+    wire [2:0] sw_clean;
+    sw_debouncer #(.WIDTH(3)) u_sw_debouncer (
+        .clk(clk),
+        .reset(reset),
+        .sw_in(sw[2:0]),
+        .sw_out(sw_clean)
+    );
 
-    // 모드 변경 리셋
-    wire mode_changed = (prev_mode != sw[1:0]);
+
+    reg [2:0] sw_mode_reg, prev_mode;
+    reg [3:0] reset_cnt;
+    wire soft_reset;
 
     always @(posedge clk or posedge reset) begin
         if (reset) begin
-            prev_mode <= sw[1:0];
-            reset_pulse <= 2'b00;
+            sw_mode_reg <= 3'b000;
+            prev_mode <= 3'b000;
+            reset_cnt <= 4'd0;
         end else begin
-            prev_mode <= sw[1:0];
+            sw_mode_reg <= sw_clean;
 
-            if (mode_changed)
-                reset_pulse <= 2'b11; // 2사이클 리셋
-            else if (reset_pulse != 2'b00)
-                reset_pulse <= reset_pulse - 1;
+            if (sw_clean != prev_mode) begin
+                prev_mode <= sw_clean;
+                reset_cnt <= 4'd10; // 최소 10 클럭 유지
+            end else if (reset_cnt != 0) begin
+                reset_cnt <= reset_cnt - 1;
+            end
         end
     end
 
-    wire soft_reset = (reset || reset_pulse != 2'b00);
+    assign soft_reset = (reset || reset_cnt != 0);
 
 
     // 모드 정의
-    localparam MODE_AHU   = 2'b00;
-    localparam MODE_OVEN  = 2'b01;
-    localparam MODE_CLOCK = 2'b10;
+    localparam MODE_AHU   = 3'b001;
+    localparam MODE_OVEN  = 3'b010;
+    localparam MODE_CLOCK = 3'b100;
 
 
     localparam BTN_CENTER = 3'd0;
@@ -96,6 +106,7 @@ module top(
         .toggle_1s(w_toggle_1s),
         .clean_btn_edge(clean_btn_edge),
         .led(led_clock),
+        .buzzer(buzzer_clock),
         .an(an_clock),
         .seg(seg_clock)
     );
@@ -162,7 +173,7 @@ module top(
     );
 
     always @(*) begin
-        case (sw[1:0])
+        case (sw_mode_reg)
             MODE_AHU: begin // AHU
                 led     = led_ahu;
                 an      = an_ahu;
@@ -187,7 +198,7 @@ module top(
                 seg     = seg_clock;
                 in1_in2 = 2'b00;
                 PWM_OUT = 1'b0;
-                buzzer  = 1'b0;
+                buzzer  = buzzer_clock;
                 servo   = 1'b0;
             end
             default: begin

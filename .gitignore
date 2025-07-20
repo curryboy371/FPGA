@@ -17,8 +17,6 @@
 *.data/
 *.webtalk/
 *.vivado/
-*.srcs/
-*.str
 
 # Vivado-generated reports
 *.rpt
