@@ -111,8 +111,13 @@ module uart_rx(
                     r_baud_tick_cnt <= r_baud_tick_cnt + 1;
                     if(r_baud_tick_cnt + 1 == 4'd15) // 16번 모았으면 1비트 (STOP_BIT)수신
                     begin
+                        if (rx == 1'b1) begin // STOP 비트
+                            data_out <= r_data_reg;
+                        end
+                        else begin // STOP BIT0 ERROR
+                            data_out <= 8'hFF; // 에러 
+                        end
                         r_state <= IDLE;
-                        data_out <= r_data_reg;
                         rx_done <= 1;
                         r_baud_tick_cnt <= 0;
                     end
