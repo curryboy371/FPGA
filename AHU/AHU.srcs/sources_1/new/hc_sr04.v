@@ -104,8 +104,8 @@ module hc_sr04 (
                             end
                             else begin
                                 hc_sr04_state <= COOL_TIME;
-                                distance <= (r_us_count >> 6) + (r_us_count >> 7); // 대략 /58
-                                //distance <= r_us_count / 58;
+                                //distance <= (r_us_count >> 6) + (r_us_count >> 7); // 대략 /58
+                                distance <= r_us_count / 58;
                             end
                             r_us_count <= 0;
                         end
